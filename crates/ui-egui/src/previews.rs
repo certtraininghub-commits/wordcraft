@@ -55,9 +55,12 @@ impl Previews {
                 ui.painter().rect_filled(r, 3.0, t.hover);
             }
             let tex = tex.or_else(|| {
+                // Read the time before taking the context's write lock: `ui.input` locks the same
+                // context, and egui's lock isn't re-entrant, so reading it inside `data_mut`
+                // deadlocked the app the moment the font menu opened.
+                let now = ui.input(|i| i.time);
                 let n = ui.ctx().data_mut(|d| {
                     let c = d.get_temp_mut_or_default::<(f64, u32)>(egui::Id::new("font_preview_budget"));
-                    let now = ui.input(|i| i.time);
                     if c.0 != now {
                         *c = (now, 0);
                     }
@@ -311,4 +314,29 @@ pub fn table_style_tile(ui: &mut Ui, app: &mut WordApp, style: &str) -> Response
         ui.painter().image(h.id(), ir, uv, egui::Color32::WHITE);
     }
     resp
+}
+
+#[cfg(test)]
+mod tests {
+    /// Drawing font-menu entries must not deadlock egui's context lock (it did: the preview read
+    /// `ui.input` while holding `data_mut`, freezing the app as the font menu opened). Runs on a
+    /// worker thread so a regression fails the test instead of hanging it.
+    #[test]
+    fn font_menu_previews_do_not_deadlock() {
+        let (tx, rx) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            let preview = super::Previews::default().font_preview_fn();
+            let ctx = egui::Context::default();
+            for _ in 0..2 {
+                let mut out = ctx.run_ui(egui::RawInput::default(), |ui| {
+                    for name in ["Source Sans 3", "Source Serif 4", "No Such Font"] {
+                        let _ = preview(ui, name);
+                    }
+                });
+                out.textures_delta.clear();
+            }
+            let _ = tx.send(());
+        });
+        assert!(rx.recv_timeout(std::time::Duration::from_secs(20)).is_ok(), "font previews deadlocked");
+    }
 }
