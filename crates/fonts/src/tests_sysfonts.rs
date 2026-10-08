@@ -127,6 +127,18 @@ fn a_link_back_to_a_parent_folder_ends_the_scan() {
 }
 
 #[test]
+fn unloaded_family_bytes_sizes_a_family_without_loading_it() {
+    let dir = font_dir("bytes");
+    let expect = ["Sysfont-Regular.ttf", "Sub/Sysfont-Bold.TTF"].iter().map(|f| std::fs::metadata(dir.join(f)).unwrap().len()).sum::<u64>();
+    let db = FontDb::with_font_dirs(vec![dir]);
+    assert_eq!(db.unloaded_family_bytes("sysfont sans3"), expect);
+    assert!(!db.is_loaded(FAMILY), "asking the size loads nothing");
+    let _ = db.face(FAMILY, "Regular");
+    assert_eq!(db.unloaded_family_bytes(FAMILY), 0, "a loaded family costs nothing more");
+    assert_eq!(db.unloaded_family_bytes("No Such Font"), 0);
+}
+
+#[test]
 fn the_scan_reads_names_without_loading_the_font() {
     let dir = font_dir("names");
     assert_eq!(file_face_names(&dir.join("Sysfont-Regular.ttf")), [(FAMILY.to_string(), "Regular".to_string())]);

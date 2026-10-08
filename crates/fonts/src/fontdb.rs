@@ -712,6 +712,25 @@ impl FontDb {
         false
     }
 
+    /// How many bytes resolving `family` would read from disk: the total size of its installed
+    /// files, or 0 when it is already loaded (or not installed, or on wasm). Lets cheap callers
+    /// such as menu previews avoid loading a family just to show it.
+    pub fn unloaded_family_bytes(&self, family: &str) -> u64 {
+        if self.is_loaded(family) {
+            return 0;
+        }
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            let mut paths: Vec<std::path::PathBuf> =
+                self.read_catalog().iter().filter(|c| c.family.eq_ignore_ascii_case(family)).map(|c| c.path.clone()).collect();
+            paths.sort();
+            paths.dedup();
+            paths.iter().filter_map(|p| std::fs::metadata(p).ok()).fold(0u64, |n, m| n.saturating_add(m.len()))
+        }
+        #[cfg(target_arch = "wasm32")]
+        0
+    }
+
     fn is_loaded(&self, family: &str) -> bool {
         self.read_faces().iter().any(|f| f.family.eq_ignore_ascii_case(family))
     }

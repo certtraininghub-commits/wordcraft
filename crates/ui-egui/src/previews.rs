@@ -12,6 +12,12 @@ use wordcraft_doc::{Block, Document, Paragraph, Table, para_block};
 use crate::WordApp;
 use crate::theme::{Tokens, regular};
 
+/// Font-menu previews rendered per frame (each may load a family's files from disk).
+const PREVIEWS_PER_FRAME: u32 = 4;
+/// Families whose installed files exceed this are listed by name instead of previewed, unless
+/// they're already loaded.
+const PREVIEW_MAX_FAMILY_BYTES: u64 = 16 << 20;
+
 #[derive(Default)]
 pub struct Previews {
     tex: HashMap<String, TextureHandle>,
@@ -58,8 +64,19 @@ impl Previews {
                     c.1 += 1;
                     c.1
                 });
-                if n > 12 {
+                if n > PREVIEWS_PER_FRAME {
                     ui.ctx().request_repaint();
+                    return None;
+                }
+                // Rendering the preview loads the family's files; for a big family (emoji, CJK
+                // collections run to tens or hundreds of MB) that would stall the menu, so its
+                // entry stays in the UI face. Remember the verdict so we only ask once.
+                let too_big = ui.ctx().data_mut(|d| {
+                    *d.get_temp_mut_or_insert_with(egui::Id::new(("font_preview_too_big", name)), || {
+                        wordcraft_fonts::FontDb::global().unloaded_family_bytes(name) > PREVIEW_MAX_FAMILY_BYTES
+                    })
+                });
+                if too_big {
                     return None;
                 }
                 let ppp = ui.ctx().pixels_per_point();

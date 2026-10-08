@@ -313,20 +313,60 @@ pub fn combo(
         ui.painter().rect(ar, 0.0, if aresp.hovered() { t.hover } else { t.input }, Stroke::new(1.0, t.input_border), egui::StrokeKind::Inside);
         icons::paint(ui.painter(), Rect::from_center_size(ar.center(), vec2(9.0, 9.0)), "dropdown", t.icon, t.accent);
         egui::Popup::menu(&aresp).show(|ui| {
-            egui::ScrollArea::vertical().max_height(420.0).show(ui, |ui| {
-                ui.set_min_width(width + 60.0);
-                for it in items {
-                    let clicked = match preview {
-                        Some(p) => p(ui, it).clicked(),
-                        None => ui.selectable_label(it == current, it).clicked(),
-                    };
-                    if clicked {
-                        out = Some(it.clone());
-                        ui.close();
-                    }
-                }
-            });
+            if let Some(it) = combo_list(ui, width, current, items, preview) {
+                out = Some(it);
+                ui.close();
+            }
         });
     });
     out
+}
+
+/// Height of one row in a [`combo`] list drawn with a preview (see `previews::font_preview_fn`).
+pub const PREVIEW_ROW_H: f32 = 24.0;
+
+/// The scrolling list inside a [`combo`] popup. Only the rows scrolled into view are drawn: a
+/// preview can be expensive (the font menu renders each family in its own face, loading that
+/// family's files), and drawing every row made opening the font menu load every installed font.
+fn combo_list(ui: &mut Ui, width: f32, current: &str, items: &[String], preview: Option<&dyn Fn(&mut Ui, &str) -> Response>) -> Option<String> {
+    let mut out = None;
+    let row_h = if preview.is_some() { PREVIEW_ROW_H } else { ui.spacing().interact_size.y };
+    ui.spacing_mut().item_spacing.y = 0.0;
+    egui::ScrollArea::vertical().max_height(420.0).show_rows(ui, row_h, items.len(), |ui, rows| {
+        ui.set_min_width(width + 60.0);
+        for it in items.get(rows).unwrap_or_default() {
+            let clicked = match preview {
+                Some(p) => p(ui, it).clicked(),
+                None => ui.add_sized([ui.available_width(), row_h], egui::Button::selectable(it == current, it.as_str())).clicked(),
+            };
+            if clicked {
+                out = Some(it.clone());
+            }
+        }
+    });
+    out
+}
+
+#[cfg(test)]
+mod tests {
+    use std::cell::Cell;
+
+    /// Opening a combo with a long list draws only the rows in view, not all of them.
+    #[test]
+    fn combo_list_draws_only_visible_rows() {
+        let items: Vec<String> = (0..800).map(|i| format!("Family {i}")).collect();
+        let drawn = Cell::new(0usize);
+        let preview = |ui: &mut egui::Ui, _: &str| {
+            drawn.set(drawn.get() + 1);
+            ui.allocate_exact_size(egui::vec2(260.0, super::PREVIEW_ROW_H), egui::Sense::click()).1
+        };
+        let ctx = egui::Context::default();
+        let input = egui::RawInput { screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(800.0, 900.0))), ..Default::default() };
+        let mut out = ctx.run_ui(input, |ui| {
+            let _ = super::combo_list(ui, 150.0, "", &items, Some(&preview));
+        });
+        out.textures_delta.clear();
+        // 420 pt of list at 24 pt a row is 18 rows (plus one partly visible row each end).
+        assert!(drawn.get() > 0 && drawn.get() <= 20, "drew {} of {} rows", drawn.get(), items.len());
+    }
 }
