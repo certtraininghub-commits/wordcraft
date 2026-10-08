@@ -8,7 +8,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 env:
   CARGO_TERM_COLOR: always
@@ -44,3 +44,13 @@ jobs:
           name: wordcraft-macos-aarch64
           path: dist/release/*.dmg
           if-no-files-found: error
+      - name: Publish as a release on this fork
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          tag="fontfix-${GITHUB_SHA::7}"
+          gh release create "$tag" --target "$GITHUB_SHA" --prerelease \
+            --title "WordCraft font-menu fix (${GITHUB_SHA::7})" \
+            --notes "Ad-hoc signed Apple Silicon build of branch fix/font-menu-freeze. First launch: right-click WordCraft, choose Open." \
+            dist/release/*.dmg
