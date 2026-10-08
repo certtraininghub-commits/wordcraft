@@ -1,0 +1,46 @@
+# Personal build: an ad-hoc signed Apple Silicon DMG of this fork, on GitHub's standard macOS
+# runner (no release environment, no signing secrets). Download it from the run's artifacts.
+name: Mac build (fork)
+
+on:
+  push:
+    branches: [fix/font-menu-freeze]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: 0
+  WORDCRAFT_BUILD_SHA: ${{ github.sha }}
+
+jobs:
+  macos:
+    name: macOS Apple Silicon
+    runs-on: macos-15
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check out craft-fonts (optional Japanese fonts)
+        continue-on-error: true
+        uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
+        with:
+          repository: storytold/craft-fonts
+          ref: abb83316d96aa59c1cf64784289e378fe9fa5695
+          path: craft-fonts
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: fork-macos-aarch64
+      - name: Build and package (ad-hoc signed)
+        run: |
+          if [ -d craft-fonts ]; then export CRAFT_FONTS_DIR="$GITHUB_WORKSPACE/craft-fonts"; fi
+          packaging/macos/package.sh --arch aarch64
+      - uses: actions/upload-artifact@v4
+        with:
+          name: wordcraft-macos-aarch64
+          path: dist/release/*.dmg
+          if-no-files-found: error
